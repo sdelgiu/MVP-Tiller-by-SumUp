@@ -1,0 +1,51 @@
+# The dataset from Tiller is composed of 4 tables, organised in a star-schema.
+# Order_data is the core table, and is connected to order_line, payment_table and store_table.
+# We obtained the dataset from Le Wagon already loaded on Google BigQuery.
+# We split the work, and each separately worked on cleaning and performing transformations on different tables.
+
+# This document contains the SQL queries performed by Simone Del Giudice and Alba Castillo, who worked on order_data.
+
+######################
+
+# With this query we aim at cleaning our order_data table.
+# We start from the table Staging.order_data_filter_order_id_seba, and we clean it with multiple subqueries (description of each below)
+# In short, we match id_orders with sebi´s table; we add date columns; we add a order_type table; we erase unrelevant columns
+
+WITH
+  table_with_sebi_ids AS ( # Here we retain only id_orders appearing in Intermediate.order_data_line_0_negative_values_sebão
+  SELECT *
+  FROM `Staging.order_data_filter_order_id_sebi`
+  WHERE id_order  IN (SELECT id_order FROM `Intermediate.order_data_line_seasonality_analysis`)
+  ),
+  table_with_date_columns AS ( # Here we add date-relevant columns
+    SELECT *,
+    EXTRACT(YEAR FROM DATE(date_opened)) AS year_opened,
+    EXTRACT(MONTH FROM DATE(date_opened)) AS month_opened,
+    EXTRACT(DAY FROM DATE(date_opened)) AS day_opened,
+    FORMAT_DATE('%a', DATE(date_opened)) AS weekday_opened,
+    EXTRACT(HOUR FROM TIMESTAMP(date_opened)) AS hour_opened
+    FROM table_with_sebi_ids
+  ), table_with_order_type AS ( # Here we define order type
+      SELECT *,
+        CASE
+          WHEN id_table IS NOT NULL THEN 'In restaurant'
+          WHEN id_table IS NULL AND id_waiter IS NOT NULL THEN 'Take away'
+          WHEN id_table IS NULL AND id_waiter IS NULL THEN 'Delivery'
+        END AS order_type
+      FROM table_with_date_columns
+  )
+    SELECT # We erase unrelevant columns
+    id_order,
+    id_store, 
+    id_table,
+    id_waiter, 
+    date_opened, 
+    m_nb_customer, 
+    order_type,
+    year_opened, 
+    month_opened,
+    day_opened, 
+    weekday_opened, 
+    hour_opened
+  FROM table_with_order_type;
+
