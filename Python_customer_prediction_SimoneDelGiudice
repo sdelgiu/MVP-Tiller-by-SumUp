@@ -1,0 +1,79 @@
+# The dataset from Tiller is composed of 4 tables, organised in a star-schema.
+# Order_data is the core table, and is connected to order_line, payment_table and store_table.
+# We obtained the dataset from Le Wagon already loaded on Google BigQuery.
+# We split the work, and each separately worked on cleaning and performing transformations on different tables.
+
+# This document contains the python codes used in the "Customers" section of the MVP to produce a machine-learning-based forecast of the customer attendance in the next week.
+# This analysis has been performed using PROPHET(https://www.sktime.net/en/stable/api_reference/auto_generated/sktime.forecasting.fbprophet.Prophet.html) by Simone Del Giudice.
+
+####################################
+
+# Install the appropriate version of necessary packages
+  !pip install greykite -q
+  !pip install numpy==1.26.0
+  !pip install pandas==2.2.0
+  !pip install scikit-learn==1.5
+  !pip install holidays==0.24
+  !pip install pandas-gbq --quiet
+
+# Import packages
+  import pandas as pd
+  import numpy as np
+  import holidays
+  import datetime
+  from greykite.framework.templates.autogen.forecast_config import ForecastConfig, MetadataParam, ModelComponentsParam
+  from greykite.framework.templates.forecaster import Forecaster
+  from google.cloud import bigquery
+  from google.oauth2 import service_account
+  from google.colab import auth
+  import pandas_gbq
+
+# Load the table from BigQuery
+  auth.authenticate_user()
+  client = bigquery.Client(project='tiller-project-470114')
+  sql_query = """select * from Mart.order_data_price_alba"""
+  query_results = client.query(sql_query).result().to_dataframe()
+  query_results.head()
+
+# Machine-learning forecadting was conducted on a single restaurant, to showcase the utilization of this tool to predict customer visits.
+# Therefore, I split the dataframe into a disctionary of dataframes, making each restaurant separately accessible.
+  store_dfs = {store_id: df for store_id, df in query_results.groupby("id_store")}
+
+# I focused on the store 5281
+  df_5281 = store_dfs[5281]
+  df_5281 = df_5281.groupby("date")["m_nb_customer"].sum()
+  df_5281 = df_5281.reset_index("date")
+  df_5281.head() # dataframe with number of customers per each day of the dataset
+
+# PROPHET-based prediction model
+  config = ForecastConfig(
+     metadata_param=MetadataParam(
+      time_col = "date",
+      value_col = "m_nb_customer",
+      freq="D",
+      train_end_date = datetime.datetime(2020, 11, 11)),
+     model_template="PROPHET",
+     forecast_horizon=14,
+     coverage=0.95)
+  forecaster = Forecaster()
+  result = forecaster.run_forecast_config(df=df_5281, config=config)
+  result.forecast.plot() # Visualize the performance of prediction
+  result.forecast.test_evaluation['MAPE'] # Visualize the score of the prediction
+
+# Import the results back into BigQuery for visualization in Looker
+  forecast_prophet_df = result.forecast.df
+  forecast_prophet_df.head()
+  forecast_prophet_df = forecast_prophet_df.drop(columns = ["actual", "forecast_lower", "forecast_upper"])
+  forecast_prophet_df["date"] = forecast_prophet_df["ts"]
+  forecast_prophet_df = forecast_prophet_df.drop(columns = ["ts"])
+
+  project_id = "tiller-project-470114"   
+  dataset_id = "Mart"                    
+  table_id = "future_customers_PROPHET_5281"
+
+  pandas_gbq.to_gbq(
+    forecast_prophet_df,
+    f"{dataset_id}.{table_id}",
+    project_id=project_id,
+    if_exists="replace"  # options: "fail", "replace", "append"
+  )
