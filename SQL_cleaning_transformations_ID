@@ -3,7 +3,7 @@
 # We obtained the dataset from Le Wagon already loaded on Google BigQuery.
 # We split the work, and each separately worked on cleaning and performing transformations on different tables.
 
-# This document contains the SQL queries performed by Idil Dorak, who worked on order_line and payment_data.
+# This document contains the SQL queries performed by Idil Dorak, who worked mainly on order_line.
 
 ######################
 
